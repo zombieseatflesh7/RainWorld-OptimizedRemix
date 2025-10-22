@@ -1,9 +1,7 @@
 ﻿using BepInEx;
-using HarmonyLib;
 using Menu.Remix;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
-using MonoMod.RuntimeDetour;
 using System;
 using System.Collections.Generic;
 using System.Security.Permissions;
@@ -15,7 +13,7 @@ using UnityEngine;
 
 namespace OptimizedRemix;
 
-[BepInPlugin("zombieseatflesh7.OptimizedRemix", "Optimized Remix Menu", "1.0.0")]
+[BepInPlugin("zombieseatflesh7.OptimizedRemix", "Optimized Remix Menu", "1.0.1")]
 public class Plugin : BaseUnityPlugin
 {
     public static new BepInEx.Logging.ManualLogSource Logger;
@@ -43,7 +41,7 @@ public class Plugin : BaseUnityPlugin
 
             foreach (ModManager.Mod mod in ModManager.ActiveMods)
             {
-                if (mod.id == "rwnmp" || mod.id == "FasterRemix")
+                if (mod.id == "FasterRemix")
                 {
                     throw new Exception($"Incompatible mod {mod.name}. You must disable this mod before you can use Optimized Remix Menu.");
                 }
