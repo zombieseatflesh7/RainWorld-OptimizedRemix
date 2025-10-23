@@ -1,15 +1,22 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
-    <LangVersion>11</LangVersion>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net48</TargetFramework>
+		<LangVersion>11</LangVersion>
+		<AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <Reference Include="../lib/*.dll">
-      <Private>false</Private>
-    </Reference>
-  </ItemGroup>
+	<ItemGroup>
+		<Reference Include="../lib/*.dll">
+			<Private>false</Private>
+		</Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="CompactJson.Sources" Version="1.4.0" />
+		<PackageReference Include="K4os.Hash.xxHash" Version="1.0.8" />
+		<PackageReference Include="TeximpNet" Version="1.4.3" />
+	</ItemGroup>
 
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="Exists('$(RainWorldDir)')">
 		<ItemGroup>
@@ -17,5 +24,11 @@
 		</ItemGroup>
 		<Copy SourceFiles="@(Assets)" DestinationFiles="$(RainWorldDir)/RainWorld_Data/StreamingAssets/mods/$(ProjectName)/%(RecursiveDir)%(Filename)%(Extension)" />
 		<Copy SourceFiles="$(TargetDir)$(ProjectName).dll;$(TargetDir)$(ProjectName).pdb" DestinationFolder="$(RainWorldDir)/RainWorld_Data/StreamingAssets/mods/$(ProjectName)/plugins" />
+		<Copy SourceFiles="$(TargetDir)\K4os.Hash.xxHash.dll;
+			  $(TargetDir)\TeximpNet.dll;
+			  $(TargetDir)\System.Runtime.CompilerServices.Unsafe.dll;
+			  $(TargetDir)\System.Numerics.Vectors.dll;
+			  $(TargetDir)\System.Memory.dll;
+			  $(TargetDir)\System.Buffers.dll;" DestinationFolder="$(RainWorldDir)/RainWorld_Data/StreamingAssets/mods/$(ProjectName)/plugins" />
 	</Target>
 </Project>

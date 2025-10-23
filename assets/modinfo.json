@@ -1,7 +1,7 @@
 {
 	"id": "OptimizedRemix",
 	"name": "Optimized Remix Menu",
-	"version": "1.0.1",
+	"version": "1.1.0",
 	"target_game_version": "v1.11.3",
 	"authors": "Zombieseatflesh7",
 	"description": "Significantly reduces remix menu memory usage and load time.",

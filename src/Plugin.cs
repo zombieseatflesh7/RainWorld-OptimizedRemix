@@ -4,6 +4,8 @@ using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Permissions;
 using UnityEngine;
 
@@ -13,9 +15,12 @@ using UnityEngine;
 
 namespace OptimizedRemix;
 
-[BepInPlugin("zombieseatflesh7.OptimizedRemix", "Optimized Remix Menu", "1.0.1")]
+[BepInPlugin("zombieseatflesh7.OptimizedRemix", "Optimized Remix Menu", "1.1.0")]
 public class Plugin : BaseUnityPlugin
 {
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Ansi)]
+    static extern IntPtr LoadLibraryA(string lpLibFileName);
+
     public static new BepInEx.Logging.ManualLogSource Logger;
     private static bool initialized = false;
     private static FShader greyscaleShader;
@@ -23,6 +28,9 @@ public class Plugin : BaseUnityPlugin
     public void OnEnable()
     {
         Logger = base.Logger;
+
+        LoadLibraryA(Path.Combine(IOHelper.ModDirectory, "native", "nvtt.dll"));
+        LoadLibraryA(Path.Combine(IOHelper.ModDirectory, "native", "FreeImage.dll"));
 
         On.RainWorld.OnModsInit += OnModsInit;
     }
@@ -35,9 +43,6 @@ public class Plugin : BaseUnityPlugin
         if (!initialized)
         {
             initialized = true;
-            AssetBundle assetBundle = AssetBundle.LoadFromFile(AssetManager.ResolveFilePath("optimizedremixbundle"));
-            greyscaleShader = FShader.CreateShader("OptimizedRemix.Greyscale", assetBundle.LoadAsset<Shader>("Assets/Shaders/Greyscale.shader"));
-            self.Shaders.Add("OptimizedRemix.Greyscale", greyscaleShader);
 
             foreach (ModManager.Mod mod in ModManager.ActiveMods)
             {
@@ -46,14 +51,46 @@ public class Plugin : BaseUnityPlugin
                     throw new Exception($"Incompatible mod {mod.name}. You must disable this mod before you can use Optimized Remix Menu.");
                 }
             }
+
+            // Shader loading
+            AssetBundle assetBundle = AssetBundle.LoadFromFile(AssetManager.ResolveFilePath("optimizedremixbundle"));
+            greyscaleShader = FShader.CreateShader("OptimizedRemix.Greyscale", assetBundle.LoadAsset<Shader>("Assets/Shaders/Greyscale.shader"));
+            self.Shaders.Add("OptimizedRemix.Greyscale", greyscaleShader);
+
+            try // Resizing textures to improve loading times
+            {
+                List<string> modThumbnails = GetAllPNGThumbnails();
+                TextureResizer.Instance.FixThumbnailPNGSizes(modThumbnails.ToArray());
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+
             AddHooks();
         }
     }
 
+    private static List<string> GetAllPNGThumbnails()
+    {
+        List<string> modPNGList = new List<string>();
+        foreach (var m in ModManager.InstalledMods)
+        {
+            string modFolder = m.path;
+            string modThumbnailPath = Path.Combine(modFolder, "thumbnail.png");
+            if (File.Exists(modThumbnailPath))
+            {
+                modPNGList.Add(modThumbnailPath);
+            }
+        }
+        return modPNGList;
+    }
+
     public static void AddHooks()
     {
-        // Prevent thumbnails from loading all at once
+        // Prevent these functions from running
         On.Menu.Remix.ConfigContainer.QueueModThumbnails += QueueModThumbnails;
+        On.Menu.Remix.ConfigContainer._LoadModThumbnail += ConfigContainer_LoadModThumbnail;
 
         // optimize mod preview thumbnail
         IL.Menu.Remix.InternalOI_Stats.Initialize += InternalOI_Stats_Initialize_IL;
@@ -87,12 +124,14 @@ public class Plugin : BaseUnityPlugin
             try { orig(self, timeStacker); }
             catch (Exception e) { Debug.LogException(e); }
         };
-
-        On.Menu.Remix.ConfigContainer._LoadModThumbnail += LoadModThumbnail;
     }
 
+    // Removing these functions
     private static void QueueModThumbnails(On.Menu.Remix.ConfigContainer.orig_QueueModThumbnails orig, ConfigContainer self, MenuModList.ModButton[] buttons)
     { }
+
+    private static int ConfigContainer_LoadModThumbnail(On.Menu.Remix.ConfigContainer.orig__LoadModThumbnail orig, ConfigContainer self, MenuModList.ModButton button)
+    { return 1; }
 
     // changed OpImage to use atlas element instead of texture
     private static void InternalOI_Stats_Initialize_IL(ILContext il)
@@ -129,9 +168,9 @@ public class Plugin : BaseUnityPlugin
             i => i.MatchCall<ConfigContainer>("_GetThumbnailName")
             );
         int index = c.Index + 4; // IL_0048: ldsfld class FAtlasManager Futile::atlasManager
-        // if (atlasWithName != null)
+                                 // if (atlasWithName != null)
         c.GotoNext(i => i.Match(OpCodes.Brfalse_S)); // IL_0055: brfalse.s IL_00c0 // beginning of if block
-        // else
+                                                     // else
         c.GotoLabel(c.Next.Operand as ILLabel); // IL_00c0: ldarg.1 // beginning of else block
         ILLabel destination = c.Prev.Operand as ILLabel; // label points to end of if / else block
 
@@ -142,7 +181,7 @@ public class Plugin : BaseUnityPlugin
         {
             string thumbnailName = ConfigContainer._GetThumbnailName(button.itf.mod.id);
             if (!button._thumbLoaded && !Futile.atlasManager.DoesContainAtlas(thumbnailName))
-                ConfigContainer.instance._LoadModThumbnail(button);
+                LoadModThumbnail(button);
 
             if (button._thumbBlank) // button._thumbnail blank is probably an uneccessary check
             {
@@ -203,7 +242,7 @@ public class Plugin : BaseUnityPlugin
         try
         {
             if (!self._thumbLoaded)
-                ConfigContainer.instance._LoadModThumbnail(self);
+                LoadModThumbnail(self);
 
             if (!self._thumbBlank)
                 modButtonThumbnails[self].SetElementByName(ConfigContainer._GetThumbnailName(self.itf.mod.id));
@@ -270,9 +309,49 @@ public class Plugin : BaseUnityPlugin
         catch (Exception e) { Debug.LogException(e); }
     }
 
-    private static int LoadModThumbnail(On.Menu.Remix.ConfigContainer.orig__LoadModThumbnail orig, ConfigContainer self, MenuModList.ModButton button)
+    private static void LoadModThumbnail(MenuModList.ModButton button)
     {
         Logger.LogInfo($"Loading mod thumbnail: {button.itf.mod.id}");
-        return orig(self, button);
+
+        try
+        {
+            ModManager.Mod mod = button.itf.mod;
+            string name = ConfigContainer._GetThumbnailName(mod.id);
+            if (Futile.atlasManager.DoesContainElementWithName(name))
+            {
+                button._PingThumbnailLoaded();
+                return;
+            }
+
+            if (string.IsNullOrEmpty(mod.basePath) && string.IsNullOrEmpty(mod.path))
+            {
+                button._PingThumbnailLoaded(true);
+                return;
+            }
+
+            string thumbnailPath = mod.GetThumbnailPath();
+            if (!File.Exists(thumbnailPath))
+            {
+                button._PingThumbnailLoaded(true);
+                return;
+            }
+
+			byte[] data = File.ReadAllBytes(thumbnailPath);
+			Texture2D texture = new Texture2D(1, 1, TextureFormat.ARGB32, mipChain: false);
+			texture.LoadImage(data);
+            if (texture.width != 426 || texture.height != 240)
+            {
+                Logger.LogWarning($"Thumbnail has incorrect dimensions - {thumbnailPath}");
+                TextureScale.Bilinear(texture, 426, 240);
+            }
+            ConfigContainer._TrimModThumbnail(ref texture);
+			HeavyTexturesCache.LoadAndCacheAtlasFromTexture(name, texture, textureFromAsset: false);
+            button._PingThumbnailLoaded();
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+            button._PingThumbnailLoaded(true);
+        }
     }
 }
