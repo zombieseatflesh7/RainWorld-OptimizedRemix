@@ -15,7 +15,7 @@ using UnityEngine;
 
 namespace OptimizedRemix;
 
-[BepInPlugin("zombieseatflesh7.OptimizedRemix", "Optimized Remix Menu", "1.1.0")]
+[BepInPlugin("zombieseatflesh7.OptimizedRemix", "Optimized Remix Menu", "1.1.2")]
 public class Plugin : BaseUnityPlugin
 {
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Ansi)]
@@ -28,11 +28,9 @@ public class Plugin : BaseUnityPlugin
     public void OnEnable()
     {
         Logger = base.Logger;
-
-        LoadLibraryA(Path.Combine(IOHelper.ModDirectory, "native", "nvtt.dll"));
-        LoadLibraryA(Path.Combine(IOHelper.ModDirectory, "native", "FreeImage.dll"));
-
         On.RainWorld.OnModsInit += OnModsInit;
+        On.RainWorld.PostModsInit += PostModsInit;
+        Options.Instance.OnConfigChanged += OptimizeTextures;
     }
 
     // most of this code breaks if its run OnEnable for some reason lmao
@@ -52,38 +50,53 @@ public class Plugin : BaseUnityPlugin
                 }
             }
 
+            MachineConnector.SetRegisteredOI("OptimizedRemix", Options.Instance);
+
             // Shader loading
             AssetBundle assetBundle = AssetBundle.LoadFromFile(AssetManager.ResolveFilePath("optimizedremixbundle"));
             greyscaleShader = FShader.CreateShader("OptimizedRemix.Greyscale", assetBundle.LoadAsset<Shader>("Assets/Shaders/Greyscale.shader"));
             self.Shaders.Add("OptimizedRemix.Greyscale", greyscaleShader);
 
-            try // Resizing textures to improve loading times
-            {
-                List<string> modThumbnails = GetAllPNGThumbnails();
-                TextureResizer.Instance.FixThumbnailPNGSizes(modThumbnails.ToArray());
-            }
-            catch (Exception ex)
-            {
-                Debug.LogException(ex);
-            }
-
+            // Hooks
             AddHooks();
         }
     }
 
-    private static List<string> GetAllPNGThumbnails()
+    private void PostModsInit(On.RainWorld.orig_PostModsInit orig, RainWorld self)
     {
-        List<string> modPNGList = new List<string>();
-        foreach (var m in ModManager.InstalledMods)
+        orig(self);
+
+        OptimizeTextures();
+    }
+
+    private bool hasOptimizedTextures = false;
+    public void OptimizeTextures()
+    {
+        if (hasOptimizedTextures || !Options.LoadThumbnails.Value) return;
+
+        try
         {
-            string modFolder = m.path;
-            string modThumbnailPath = Path.Combine(modFolder, "thumbnail.png");
-            if (File.Exists(modThumbnailPath))
+            hasOptimizedTextures = true;
+
+            LoadLibraryA(AssetManager.ResolveFilePath("native/nvtt.dll"));
+            LoadLibraryA(AssetManager.ResolveFilePath("native/FreeImage.dll"));
+
+            List<string> modPNGList = new List<string>(ModManager.InstalledMods.Count);
+            foreach (var m in ModManager.InstalledMods)
             {
-                modPNGList.Add(modThumbnailPath);
+                string modThumbnailPath = Path.Combine(m.path, "thumbnail.png");
+                if (File.Exists(modThumbnailPath) && (m.workshopMod || Options.ResizeLocalThumbnails.Value))
+                {
+                    modPNGList.Add(modThumbnailPath);
+                }
             }
+            TextureResizer.Instance.FixThumbnailPNGSizes(modPNGList.ToArray());
         }
-        return modPNGList;
+        catch (Exception e)
+        {
+            Logger.LogError("Error while resizing thumbnails");
+            Logger.LogError(e);
+        }
     }
 
     public static void AddHooks()
@@ -179,6 +192,12 @@ public class Plugin : BaseUnityPlugin
         c.Emit(OpCodes.Ldarg_1); // MenuModList.ModButton button
         c.EmitDelegate((InternalOI_Stats stats, MenuModList.ModButton button) =>
         {
+            if (!Options.LoadThumbnails.Value)
+            {
+                stats.imgThumbnail.Hide();
+                return;
+            }
+
             string thumbnailName = ConfigContainer._GetThumbnailName(button.itf.mod.id);
             if (!button._thumbLoaded && !Futile.atlasManager.DoesContainAtlas(thumbnailName))
                 LoadModThumbnail(button);
@@ -239,6 +258,12 @@ public class Plugin : BaseUnityPlugin
     // rewritten to load the thumbnail as needed and use FSprite
     private static void ModButton_ProcessThumbnail(On.Menu.Remix.MenuModList.ModButton.orig__ProcessThumbnail orig, MenuModList.ModButton self)
     {
+        if (!Options.LoadThumbnails.Value)
+        {
+            self._thumbBlank = true;
+            return;
+        }
+
         try
         {
             if (!self._thumbLoaded)

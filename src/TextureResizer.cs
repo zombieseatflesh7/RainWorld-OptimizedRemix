@@ -22,8 +22,7 @@ internal class TextureResizer
 
     private TextureResizer()
     {
-        // resolves to: %MOD_FOLDE%/textureCache.json
-        _cachePath = Path.Combine(IOHelper.ModDirectory, "textureCache.json");
+        _cachePath = "RainWorld_Data/StreamingAssets/optimizedRemixTextureCache.json";
 
         if (File.Exists(_cachePath))
         {
@@ -170,7 +169,7 @@ internal class TextureResizer
                 // FileNeedsUpdate now handles metadata + streamed hash verification
                 if (!FileNeedsUpdate(thumbnailPath))
                 {
-                    Plugin.Logger.LogDebug($"Skipping unchanged: {thumbnailPath}");
+                    //Plugin.Logger.LogDebug($"Skipping unchanged: {thumbnailPath}");
                     return;
                 }
 
